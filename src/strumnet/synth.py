@@ -1,11 +1,14 @@
-"""Synthetic plucked-string notes.
+"""Synthetic plucked-string notes as a phone tuner app would capture them.
 
-A plucked string with up to 10 partials. Timbre depends on where the string
-is plucked (comb filter ``|sin(pi * n * beta)|``) and on a random spectral
-tilt. Partials are slightly inharmonic, like real strings:
-``f_n = n * f0 * sqrt(1 + B * n^2)``, and decay exponentially, the upper
-ones faster. The analysis window (0.5 s) starts at a random point of the
-decay, the way a real-time tuner would see it.
+* Plucked string with up to 10 partials. Timbre depends on where the string
+  is plucked (comb filter ``|sin(pi * n * beta)|``) and on a random spectral
+  tilt, which covers acoustic / electric / nylon-ish sounds.
+* Inharmonicity of real strings: ``f_n = n * f0 * sqrt(1 + B * n^2)``.
+* Exponential decay, faster for the upper partials, and a short analysis
+  window (0.5 s) taken at a random point of the decay.
+* Phone microphone: 2nd-order high-pass with a random cutoff. On the low
+  strings this often leaves the 2nd harmonic louder than the fundamental,
+  which is exactly what fools a max-peak tuner into an octave error.
 """
 
 import numpy as np
@@ -17,10 +20,17 @@ WINDOW_S = 0.5  # analysis window (s)
 N_PARTIALS = 10
 
 
+def mic_response(f, fc):
+    """Magnitude of a 2nd-order high-pass: small phone mics roll off the lows."""
+    r = (f / fc) ** 2
+    return r / np.sqrt(1 + r**2)
+
+
 def plucked_note(f0, t, rng, gain=1.0):
     """Sum of decaying inharmonic partials.
 
-    Returns the signal plus the initial amplitude and frequency of each partial.
+    Returns the signal plus the initial amplitude and frequency of each partial
+    (used later to tell whether the fundamental ended up weaker than a harmonic).
     """
     beta = rng.uniform(0.06, 0.30)  # pluck position, as a fraction of the string length
     tilt = rng.uniform(0.6, 1.8)  # spectral tilt 1/n^tilt
@@ -42,9 +52,23 @@ def plucked_note(f0, t, rng, gain=1.0):
 
 
 def synthesize(string_idx, cents, rng):
-    """Render one analysis window for ``string_idx`` detuned by ``cents``."""
+    """Render one analysis window for ``string_idx`` detuned by ``cents``.
+
+    Returns ``(signal, weak_fundamental)``.
+    """
     t0 = rng.uniform(0.05, 1.0)  # window starts somewhere in the decay
     t = t0 + np.arange(int(FS * WINDOW_S)) / FS
     f0 = NOMINAL_HZ[string_idx] * 2 ** (cents / 1200)
-    y, _, _ = plucked_note(f0, t, rng)
-    return y
+
+    y, amps, freqs = plucked_note(f0, t, rng)
+
+    # Phone mic, applied in the frequency domain
+    fc = rng.uniform(70, 220)
+    Y = np.fft.rfft(y)
+    fr = np.fft.rfftfreq(len(y), 1 / FS)
+    Y *= mic_response(np.maximum(fr, 1e-3), fc)
+    y = np.fft.irfft(Y, n=len(y))
+
+    amps_mic = amps * mic_response(freqs, fc)
+    weak_fundamental = bool(amps_mic[0] < amps_mic[1:].max())
+    return y, weak_fundamental
