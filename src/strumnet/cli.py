@@ -1,0 +1,52 @@
+"""Command line entry point: ``strumnet <command> ...``."""
+
+import argparse
+
+import numpy as np
+
+
+def cmd_generate(args):
+    from .baseline import predict_rows
+    from .dataset import DIFFICULTIES, NOISE_LEVELS, build, save_csv
+    from .tuning import CLASS_INDEX
+
+    rows = build(args.per_group, args.seed)
+    save_csv(rows, args.out)
+    n = len(rows)
+    print(f"wrote {n} examples to {args.out}")
+    for split in ("train", "val", "test"):
+        k = sum(r["split"] == split for r in rows)
+        print(f"  {split:5s} {k:5d} ({k / n:.0%})")
+
+    hits = predict_rows(rows) == np.array([CLASS_INDEX[r["label"]] for r in rows])
+    print(f"\npeak-picking baseline: {hits.mean():.2%}")
+    for flag in DIFFICULTIES:
+        m = np.array([r[flag] for r in rows]) == 1
+        print(f"  {flag:16s} {m.mean():6.1%} of examples, baseline {hits[m].mean():.2%}")
+    clean = ~np.array([any(r[f] for f in DIFFICULTIES) for r in rows])
+    print(f"  {'clean':16s} {clean.mean():6.1%} of examples, baseline {hits[clean].mean():.2%}")
+    noise = np.array([r["noise_level"] for r in rows])
+    by_noise = ", ".join(f"{lvl}: {hits[noise == lvl].mean():.1%}" for lvl in NOISE_LEVELS)
+    print(f"  by noise level   {by_noise}")
+
+
+def build_parser():
+    p = argparse.ArgumentParser(prog="strumnet", description=__doc__)
+    sub = p.add_subparsers(dest="command", required=True)
+
+    g = sub.add_parser("generate", help="generate the synthetic dataset")
+    g.add_argument("--out", default="data/guitar_notes.csv")
+    g.add_argument("--per-group", type=int, default=60, help="examples per (class, noise level)")
+    g.add_argument("--seed", type=int, default=42)
+    g.set_defaults(func=cmd_generate)
+
+    return p
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
