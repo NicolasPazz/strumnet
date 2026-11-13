@@ -1,9 +1,11 @@
 import csv
 from collections import Counter
+from pathlib import Path
 
 import pytest
 
 from strumnet.dataset import COLUMNS, NOISE_LEVELS, build, save_csv
+from strumnet.features import FEATURES
 from strumnet.tuning import CLASSES
 
 PER_GROUP = 5
@@ -51,3 +53,18 @@ def test_csv_roundtrip(rows, tmp_path):
         reader = csv.DictReader(f)
         assert tuple(reader.fieldnames) == COLUMNS
         assert sum(1 for _ in reader) == len(rows)
+
+
+def test_committed_dataset_is_reproducible():
+    """data/guitar_notes.csv is exactly what `strumnet generate` (seed 42) produces."""
+    path = Path(__file__).parents[1] / "data" / "guitar_notes.csv"
+    if not path.exists():
+        pytest.skip("dataset not present")
+    with open(path) as f:
+        committed = list(csv.DictReader(f))
+    fresh = build(per_group=60, seed=42)
+    assert len(committed) == len(fresh)
+    for old, new in zip(committed, fresh, strict=True):
+        assert old["label"] == new["label"] and old["split"] == new["split"]
+        for name in FEATURES:
+            assert float(old[name]) == pytest.approx(float(new[name]), rel=1e-4, abs=1e-9)
