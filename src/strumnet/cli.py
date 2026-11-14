@@ -30,6 +30,43 @@ def cmd_generate(args):
     print(f"  by noise level   {by_noise}")
 
 
+def cmd_train(args):
+    from sklearn.preprocessing import StandardScaler
+
+    from . import model as mlp
+    from .dataset import load_csv
+    from .features import FEATURES
+    from .tuning import CLASS_INDEX
+
+    df = load_csv(args.data)
+    parts = {s: df[df.split == s] for s in ("train", "val", "test")}
+    scaler = StandardScaler().fit(parts["train"][list(FEATURES)])
+    X = {s: scaler.transform(d[list(FEATURES)]) for s, d in parts.items()}
+    y = {s: d["label"].map(CLASS_INDEX).to_numpy() for s, d in parts.items()}
+
+    model, history = mlp.fit(
+        X["train"],
+        y["train"],
+        X["val"],
+        y["val"],
+        hidden=tuple(args.hidden),
+        dropout=args.dropout,
+        lr=args.lr,
+        two_heads=args.two_heads,
+        epochs=args.epochs,
+        seed=args.seed,
+    )
+    epochs = len(history.history["loss"])
+    for split in ("train", "test"):
+        acc = np.mean(mlp.predict_classes(model, X[split]) == y[split])
+        print(f"{split:5s} accuracy {acc:.2%}")
+    print(f"stopped after {epochs} epochs, {model.count_params()} parameters")
+
+    if args.out:
+        mlp.save(model, scaler, FEATURES, args.out)
+        print(f"saved to {args.out}")
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="strumnet", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -39,6 +76,17 @@ def build_parser():
     g.add_argument("--per-group", type=int, default=60, help="examples per (class, noise level)")
     g.add_argument("--seed", type=int, default=42)
     g.set_defaults(func=cmd_generate)
+
+    t = sub.add_parser("train", help="train an MLP on a generated CSV")
+    t.add_argument("--data", default="data/guitar_notes.csv")
+    t.add_argument("--hidden", type=int, nargs="+", default=[16, 8])
+    t.add_argument("--dropout", type=float, default=0.0)
+    t.add_argument("--lr", type=float, default=1e-3)
+    t.add_argument("--two-heads", action="store_true", help="separate string and state outputs")
+    t.add_argument("--epochs", type=int, default=300)
+    t.add_argument("--seed", type=int, default=42)
+    t.add_argument("--out", help="directory to save the model to")
+    t.set_defaults(func=cmd_train)
 
     return p
 
