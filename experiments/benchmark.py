@@ -12,7 +12,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 from strumnet import evaluate
 from strumnet.baseline import peak_picking_rule
@@ -65,6 +65,7 @@ def main():
         {"model": "peak_picking", "topology": "-", **evaluate.accuracy_parts(y_test, rule)}
     )
 
+    models = {}
     for name, hidden, dropout, lr, two_heads in CONFIGS:
         model, history = fit(
             X_train,
@@ -77,6 +78,7 @@ def main():
             two_heads=two_heads,
             seed=args.seed,
         )
+        models[name] = model
         pred_train = predict_classes(model, X_train)
         pred_test = predict_classes(model, X_test)
         hits[name] = pred_test == y_test
@@ -113,6 +115,32 @@ def main():
 
     evaluate.by_difficulty(test, hits).to_csv(results / "by_difficulty.csv")
     evaluate.by_noise(test, hits).to_csv(results / "by_noise.csv")
+
+    # Why StandardScaler: relative amplitudes have huge outliers when the
+    # fundamental is almost gone, and min-max squashes everything else near 0.
+    mm = MinMaxScaler().fit(train[list(FEATURES)])
+    Xmm_train, Xmm_val, Xmm_test = (mm.transform(d[list(FEATURES)]) for d in (train, val, test))
+    rows = []
+    for name, hidden, dropout, lr, two_heads in CONFIGS[:2]:
+        model_mm, _ = fit(
+            Xmm_train,
+            y_train,
+            Xmm_val,
+            y_val,
+            hidden=hidden,
+            dropout=dropout,
+            lr=lr,
+            two_heads=two_heads,
+            seed=args.seed,
+        )
+        rows.append(
+            {
+                "model": name,
+                "standard": np.mean(predict_classes(models[name], X_test) == y_test) * 100,
+                "minmax": np.mean(predict_classes(model_mm, Xmm_test) == y_test) * 100,
+            }
+        )
+    pd.DataFrame(rows).set_index("model").round(2).to_csv(results / "scaling.csv")
 
     print()
     print(summary.to_string())
