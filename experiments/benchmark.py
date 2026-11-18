@@ -113,7 +113,11 @@ def main():
     summary[pct] = (summary[pct] * 100).round(2)
     summary.to_csv(results / "summary.csv")
 
-    evaluate.by_difficulty(test, hits).to_csv(results / "by_difficulty.csv")
+    difficulty = evaluate.by_difficulty(test, hits)
+    difficulty.to_csv(results / "by_difficulty.csv")
+    evaluate.plot_by_difficulty(
+        difficulty[["peak_picking", "two_head"]], figures / "accuracy_by_difficulty.png"
+    )
     evaluate.by_noise(test, hits).to_csv(results / "by_noise.csv")
 
     # Why StandardScaler: relative amplitudes have huge outliers when the

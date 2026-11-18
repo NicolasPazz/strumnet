@@ -57,6 +57,26 @@ def by_noise(test_df, predictions):
     return (hits.groupby("noise_level").mean() * 100).round(2)
 
 
+def plot_by_difficulty(table, path):
+    """Grouped bars: one group per slice of the test set, one bar per method."""
+    fig, ax = plt.subplots(figsize=(8, 4))
+    width = 0.8 / table.shape[1]
+    x = np.arange(len(table))
+    colors = ["#a3a3a3", "#2b6cb0", "#dd6b20", "#38a169"]
+    for i, col in enumerate(table.columns):
+        offset = x + i * width - 0.4 + width / 2
+        bars = ax.bar(offset, table[col], width, label=col, color=colors[i % len(colors)])
+        ax.bar_label(bars, fmt="%.0f", fontsize=8, padding=2)
+    ax.set_xticks(x, [label.split(" (")[0].replace("_", " ") for label in table.index])
+    ax.set_ylabel("test accuracy (%)")
+    ax.set_ylim(0, 105)
+    ax.legend(ncol=table.shape[1], loc="lower left", bbox_to_anchor=(0, 1.0), frameon=False)
+    ax.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(path, dpi=130)
+    plt.close(fig)
+
+
 def plot_history(history, title, path):
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.plot(history.history["loss"], label="train")
