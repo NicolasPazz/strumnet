@@ -1,6 +1,7 @@
 """Command line entry point: ``strumnet <command> ...``."""
 
 import argparse
+import sys
 
 import numpy as np
 
@@ -67,6 +68,31 @@ def cmd_train(args):
         print(f"saved to {args.out}")
 
 
+def cmd_render(args):
+    from .audio import write_wav
+    from .dataset import NOISE_LEVELS
+    from .synth import FS, synthesize
+    from .tuning import STRINGS
+
+    if args.string not in STRINGS:
+        sys.exit(f"unknown string {args.string!r}, pick one of {', '.join(STRINGS)}")
+    rng = np.random.default_rng(args.seed)
+    noise = args.noise if args.noise is not None else NOISE_LEVELS[1]
+    y, weak, symp, hum = synthesize(STRINGS.index(args.string), args.cents, noise, rng)
+    write_wav(args.out, y, FS)
+    flags = {"weak fundamental": weak, "sympathetic": symp, "hum": hum}
+    present = [name for name, on in flags.items() if on]
+    print(f"wrote {args.out} ({', '.join(present) or 'clean'})")
+
+
+def cmd_predict(args):
+    from .inference import Tuner
+
+    tuner = Tuner.load(args.model)
+    for path in args.wav:
+        print(f"{path}: {tuner.predict_wav(path)}")
+
+
 def build_parser():
     p = argparse.ArgumentParser(prog="strumnet", description=__doc__)
     sub = p.add_subparsers(dest="command", required=True)
@@ -88,6 +114,18 @@ def build_parser():
     t.add_argument("--out", help="directory to save the model to")
     t.set_defaults(func=cmd_train)
 
+    r = sub.add_parser("render", help="write a synthetic note to a WAV file")
+    r.add_argument("string", help="E2, A2, D3, G3, B3 or E4")
+    r.add_argument("cents", type=float, help="detune, e.g. -25")
+    r.add_argument("out")
+    r.add_argument("--noise", type=float)
+    r.add_argument("--seed", type=int)
+    r.set_defaults(func=cmd_render)
+
+    pr = sub.add_parser("predict", help="classify WAV recordings with a trained model")
+    pr.add_argument("model", help="directory written by `strumnet train --out`")
+    pr.add_argument("wav", nargs="+")
+    pr.set_defaults(func=cmd_predict)
     return p
 
 
