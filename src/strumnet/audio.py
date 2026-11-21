@@ -9,13 +9,25 @@ from .synth import FS, WINDOW_S
 
 
 def read_wav(path):
-    """Return ``(signal in [-1, 1], sample rate)``. 16-bit mono PCM only for now."""
+    """Return ``(mono signal in [-1, 1], sample rate)``. Handles 8/16/24/32-bit PCM."""
     with wave.open(str(path), "rb") as w:
-        if w.getnchannels() != 1 or w.getsampwidth() != 2:
-            raise ValueError("only 16-bit mono WAV files are supported")
-        rate = w.getframerate()
+        channels, width, rate = w.getnchannels(), w.getsampwidth(), w.getframerate()
         raw = w.readframes(w.getnframes())
-    return np.frombuffer(raw, "<i2") / 2**15, rate
+
+    if width == 1:
+        x = (np.frombuffer(raw, np.uint8).astype(float) - 128) / 128
+    elif width == 2:
+        x = np.frombuffer(raw, "<i2") / 2**15
+    elif width == 3:
+        b = np.frombuffer(raw, np.uint8).reshape(-1, 3).astype(np.int32)
+        v = b[:, 0] | (b[:, 1] << 8) | (b[:, 2] << 16)
+        x = np.where(v & 0x800000, v - 0x1000000, v) / 2**23
+    elif width == 4:
+        x = np.frombuffer(raw, "<i4") / 2**31
+    else:
+        raise ValueError(f"unsupported sample width: {width} bytes")
+
+    return x.reshape(-1, channels).mean(axis=1), rate
 
 
 def write_wav(path, x, rate=FS):
