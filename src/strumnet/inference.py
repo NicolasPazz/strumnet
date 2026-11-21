@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 
 from .audio import load_window
+from .baseline import peak_picking_rule
 from .features import extract_features
 from .tuning import CLASSES, STATES, STRINGS, split_class
 
@@ -19,11 +20,14 @@ class Prediction:
     confidence: float
     cents: float  # pitch-class deviation, octave-agnostic
     peak_hz: float  # strongest spectral peak
+    peak_picking: str  # what a classic max-peak tuner would have said
 
     def __str__(self):
+        naive = self.peak_picking.replace("_", " ")
         return (
             f"{self.string} {self.state.replace('_', ' ')} "
-            f"({round(self.cents):+d} cents, p={self.confidence:.2f}, peak {self.peak_hz:.1f} Hz)"
+            f"({round(self.cents):+d} cents, p={self.confidence:.2f})"
+            f" | peak at {self.peak_hz:.1f} Hz, peak picking says {naive}"
         )
 
 
@@ -63,6 +67,7 @@ class Tuner:
             confidence=float(probs[idx]),
             cents=float(feats["cents_note"]),
             peak_hz=float(feats["f0_hz"]),
+            peak_picking=CLASSES[int(peak_picking_rule(feats["f0_hz"], feats["cents_dev"]))],
         )
 
     def predict_wav(self, path):

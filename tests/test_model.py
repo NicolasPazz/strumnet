@@ -45,3 +45,4 @@ def test_save_load_and_predict(tmp_path):
     pred = tuner.predict_signal(signals[0])
     assert pred.label in CLASSES
     assert 0 <= pred.confidence <= 1
+    assert pred.peak_picking in CLASSES
