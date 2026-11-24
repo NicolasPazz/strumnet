@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "strumnet"
-version = "0.2.0"
+version = "0.3.0"
 description = "Guitar string and tuning-state classifier that doesn't fall for octave errors"
 readme = "README.md"
 license = { text = "MIT" }
